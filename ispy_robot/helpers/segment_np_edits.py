@@ -329,6 +329,7 @@ def find_objects_computer():
    create_graph()
 
    for image_file in game1_image_files:
+      print "Reading image: " + path + image_file
       frame = cv2.imread(path + image_file)
 
       old_found = []
@@ -337,6 +338,7 @@ def find_objects_computer():
       contours = find_contours(frame)
 
       for i in range(len(contours)):
+         print "Checking countour:", i
          contour = contours[i]
          x, y, w, h = cv2.boundingRect(contour)
          cx = x + w/2
@@ -352,12 +354,17 @@ def find_objects_computer():
             dist = math.sqrt((cx-u.position[0])**2 + (cy-u.position[1])**2)
             if dist < best[1]:
                best = (u, dist)
-         if best[1] < 150:
+
+         # Note: The code below differs somewhat from the analogous code in find_objects().  
+         # I didn't change it in find_objects() because it's possible that when using the 
+         # robot, it's better as-is.  However, when using multiple images stored in a 
+         # directory, the original code in find_objects() stopped finding new segments 
+         # after the first image.  This version finds (or at least tries to find) 
+         # segments in all images.
+         if best[0] is not None:
             old_found.append(best[0])
             best[0].update(contour, (cx, cy), frame[y:(y+h), x:(x+w)], a)
-         else:
-            print best[1]
-            new_contours.append(i)
+         new_contours.append(i)
 
       new_objects = list(old_found)
 
