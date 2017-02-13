@@ -213,38 +213,37 @@ def find_objects():
    Process the recorded video and determine object information
    Returns an array of Objects
    """
-   #broker = ALBroker("broker", "0.0.0.0", 0, "localhost", 9559)
+   broker = ALBroker("broker", "0.0.0.0", 0, "localhost", 9559)
 
-   #motion = ALProxy("ALMotion")
-   #posture = ALProxy("ALRobotPosture")
-   #camera = ALProxy("ALVideoDevice", "localhost", 9559)
+   motion = ALProxy("ALMotion")
+   posture = ALProxy("ALRobotPosture")
+   camera = ALProxy("ALVideoDevice", "localhost", 9559)
 
-   #posture.goToPosture("Stand", 0.5)
+   posture.goToPosture("Stand", 0.5)
 
-   #images = record_video(camera, motion)
+   images = record_video(camera, motion)
 
    fourcc = cv2.cv.CV_FOURCC('M','J','P','G')
-   #out_video = cv2.VideoWriter('/home/nao/output.avi', fourcc, 20.0, (640, 480))
+   out_video = cv2.VideoWriter('/home/nao/output.avi', fourcc, 20.0, (640, 480))
 
    objects = []
    old_objects = []
-   
-   path = "/home/parde/Documents/iSpy_images/GameImages/Game1/"
-   game1_image_files = os.listdir(path)
+
    maybe_download_and_extract()
 
    # Creates graph from saved GraphDef.
    create_graph()
 
-   for image_file in game1_image_files:
-   #   nao_image = pair[0]
-   #   angle = pair[1]
+   img_counter == 0
+   for pair in images:
+      nao_image = pair[0]
+      angle = pair[1]
       # Convert NAO Format to OpenCV format
-   #   frame = np.reshape(np.frombuffer(nao_image[6], dtype='%iuint8' % nao_image[2]), (nao_image[1], nao_image[0], nao_image[2]))
+      frame = np.reshape(np.frombuffer(nao_image[6], dtype='%iuint8' % nao_image[2]), (nao_image[1], nao_image[0], nao_image[2]))
 
-   #   video_frame = frame.copy()
-   #   cv2.putText(video_frame, str(angle), (20, 460), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255))
-   #   out_video.write(video_frame)
+      video_frame = frame.copy()
+      cv2.putText(video_frame, str(angle), (20, 460), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255))
+      out_video.write(video_frame)
       frame = cv2.imread(path + image_file)
 
       old_found = []
@@ -258,9 +257,8 @@ def find_objects():
          cx = x + w/2
          cy = y + h/2
 
-        # a = camera.getAngularPositionFromImagePosition(1, (float(cx)/640, float(cy)/480))
-         a = math.atan2(float(cx)/640, float(cy)/480)  # Comment this out and uncomment the lines above and below if using the robot.
-        # a[0] += angle
+         a = camera.getAngularPositionFromImagePosition(1, (float(cx)/640, float(cy)/480))
+         a[0] += angle
 
          best = (None, 99999)
          for j in range(len(old_objects)):
@@ -285,8 +283,90 @@ def find_objects():
          x, y, w, h = cv2.boundingRect(contour)
          cx = x + w/2
          cy = y + h/2
-       #  a = camera.getAngularPositionFromImagePosition(1, (float(cx)/640, float(cy)/480))
-       #  a[0] += angle
+         a = camera.getAngularPositionFromImagePosition(1, (float(cx)/640, float(cy)/480))
+         a[0] += angle
+         roi = frame[y:(y+h), x:(x+w)]
+
+         # Display the segment.
+         print "Displaying segment now...."
+         cv2.namedWindow("Segment " + str(segment_counter))
+         cv2.imshow("Segment " + str(segment_counter), roi)
+
+         # Write the segment to a file so we can look at it later too.
+         segment_file_name = "segments/s" + str(segment_counter) + "_img" + str(img_counter) + ".jpg"
+         cv2.imwrite(segment_file_name, roi)
+
+         # Use TensorFlow to classify the segment.
+         run_inference_on_image(segment_file_name)
+         cv2.waitKey(0)  # Wait until the image is manually closed to continue.
+
+         obj = Object(contour, (cx, cy), roi, a)
+         objects.append(obj)
+         new_objects.append(obj)
+         segment_counter += 1
+
+      old_objects = new_objects
+      img_counter += 1
+   out_video.release()
+   return objects
+
+def find_objects_computer():
+   """
+   Process the images located in the specified folder and determine object information
+   Returns an array of Objects
+   """
+
+   fourcc = cv2.cv.CV_FOURCC('M','J','P','G')
+
+   objects = []
+   old_objects = []
+   
+   path = "/home/parde/Documents/iSpy_images/GameImages/Game1/"
+   game1_image_files = os.listdir(path)
+   maybe_download_and_extract()
+
+   # Creates graph from saved GraphDef.
+   create_graph()
+
+   for image_file in game1_image_files:
+      frame = cv2.imread(path + image_file)
+
+      old_found = []
+      new_contours = []
+
+      contours = find_contours(frame)
+
+      for i in range(len(contours)):
+         contour = contours[i]
+         x, y, w, h = cv2.boundingRect(contour)
+         cx = x + w/2
+         cy = y + h/2
+
+         a = math.atan2(float(cx)/640, float(cy)/480)  # May not be an accurate approximation of its counterpart in the robot code.
+
+         best = (None, 99999)
+         for j in range(len(old_objects)):
+            if j in old_found:
+               continue
+            u = old_objects[j]
+            dist = math.sqrt((cx-u.position[0])**2 + (cy-u.position[1])**2)
+            if dist < best[1]:
+               best = (u, dist)
+         if best[1] < 150:
+            old_found.append(best[0])
+            best[0].update(contour, (cx, cy), frame[y:(y+h), x:(x+w)], a)
+         else:
+            print best[1]
+            new_contours.append(i)
+
+      new_objects = list(old_found)
+
+      segment_counter = 1
+      for contour in new_contours:
+         contour = contours[contour]
+         x, y, w, h = cv2.boundingRect(contour)
+         cx = x + w/2
+         cy = y + h/2
          roi = frame[y:(y+h), x:(x+w)]
 
          # Display the segment.
@@ -302,16 +382,12 @@ def find_objects():
          run_inference_on_image(segment_file_name)
          cv2.waitKey(0)  # Wait until the image is manually closed to continue.
 
-         
-
-       #  obj = Object(contour, (cx, cy), roi, a)
-       #  objects.append(obj)
-       #  new_objects.append(obj)
+         obj = Object(contour, (cx, cy), roi, a)
+         objects.append(obj)
+         new_objects.append(obj)
          segment_counter += 1
-
       old_objects = new_objects
-  # out_video.release()
    return objects
 
 if __name__ == '__main__':
-   find_objects()
+   find_objects_computer()
