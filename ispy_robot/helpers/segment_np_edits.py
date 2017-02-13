@@ -118,8 +118,10 @@ def run_inference_on_image(image):
     image: Image file name.
 
    Returns:
-    Nothing
+    Tuple containng the human-readable object name, and the prediction score for 
+    that object.
    """
+   top_prediction = (None, None)
    if not tf.gfile.Exists(image):
       tf.logging.fatal('File does not exist %s', image)
    image_data = tf.gfile.FastGFile(image, 'rb').read()
@@ -141,11 +143,12 @@ def run_inference_on_image(image):
       # Creates node ID --> English string lookup.
       node_lookup = NodeLookup()
 
-      top_k = predictions.argsort()[-1:][::-1]  # [-1:] represents the number of predictions to show; this means I only want one of them (the top one) to be shown.
+      top_k = predictions.argsort()[-1:][::-1]  # [-1:] represents the number of predictions to show; this means I only want one of them (the top one) to be shown.      
       for node_id in top_k:
          human_string = node_lookup.id_to_string(node_id)
          score = predictions[node_id]
-         print('%s (score = %.5f)' % (human_string, score))
+         top_prediction = (human_string, score)
+   return top_prediction
 
 def find_contours(img):
    """
@@ -297,7 +300,8 @@ def find_objects():
          cv2.imwrite(segment_file_name, roi)
 
          # Use TensorFlow to classify the segment.
-         run_inference_on_image(segment_file_name)
+         human_string, score = run_inference_on_image(segment_file_name)
+         print('%s (score = %.5f)' % (human_string, score))
          cv2.waitKey(0)  # Wait until the image is manually closed to continue.
 
          obj = Object(contour, (cx, cy), roi, a)
@@ -374,6 +378,8 @@ def find_objects_computer():
          x, y, w, h = cv2.boundingRect(contour)
          cx = x + w/2
          cy = y + h/2
+         a = math.atan2(float(cx)/640, float(cy)/480)
+
          roi = frame[y:(y+h), x:(x+w)]
 
          # Display the segment.
@@ -386,7 +392,8 @@ def find_objects_computer():
          cv2.imwrite(segment_file_name, roi)
 
          # Use TensorFlow to classify the segment.
-         run_inference_on_image(segment_file_name)
+         human_string, score = run_inference_on_image(segment_file_name)
+         print('%s (score = %.5f)' % (human_string, score))
          cv2.waitKey(0)  # Wait until the image is manually closed to continue.
 
          obj = Object(contour, (cx, cy), roi, a)
