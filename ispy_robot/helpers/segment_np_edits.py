@@ -392,8 +392,8 @@ def find_objects_computer():
          cv2.imwrite(segment_file_name, roi)
 
          # Use TensorFlow to classify the segment.
-         human_string, score = run_inference_on_image(segment_file_name)
-         print('%s (score = %.5f)' % (human_string, score))
+         object_name, score = run_inference_on_image(segment_file_name)
+         print('%s (score = %.5f)' % (object_name, score))
          cv2.waitKey(0)  # Wait until the image is manually closed to continue.
 
          obj = Object(contour, (cx, cy), roi, a)
