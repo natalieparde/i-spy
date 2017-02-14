@@ -24,7 +24,7 @@ def ask(question_id, object_we_play, game, answers, pO, Pi, objects, number_of_o
 	probabilityD = get_tval()
 
 	# gets the correct question for the given tag
-	question_tag = tags.get(question_id)
+	question_tag = tags.get(question_id)  # The program has currently assigned pre-generated questions to each attribute.  Our new QG code should be used here instead.
 	quests = tags.get_questions()
 	question = quests[question_id - 1]
 
