@@ -401,7 +401,7 @@ def find_objects_computer():
          new_objects.append(obj)
          segment_counter += 1
       old_objects = new_objects
-   return objects
+   return [obj.angles for obj in objects]
 
 if __name__ == '__main__':
    find_objects_computer()

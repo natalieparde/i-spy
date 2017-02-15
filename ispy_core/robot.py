@@ -1,11 +1,15 @@
+import math
 import time
 import os
 
 import numpy as np
-import speech_recognition as sr
 from naoqi import ALModule, ALProxy, ALBroker
+import speech_recognition as sr
+
+import config
 
 count = 0
+r = None
 
 def connect(address="bobby.local", port=9559, name="r", brokername="broker"):
 	global broker
@@ -26,10 +30,12 @@ def broker():
 class Robot(ALModule):
 	def __init__( self, strName, address = "bobby.local", port = 9559):
 		ALModule.__init__( self, strName )
-		self.outfile = None
-		self.outfiles = [None]*(3)
-		self.count = 99999999
-		self.check = False
+
+		# Are these used for anything?
+		# self.outfile = None
+		# self.outfiles = [None]*(3)
+		# self.count = 99999999
+		# self.check = False
 
 		# --- audio ---
 		self.audio = ALProxy("ALAudioDevice", address, port)
@@ -41,8 +47,8 @@ class Robot(ALModule):
 		self.asr.setLanguage("English")
 
 		self.yes_no_vocab = {
-			"yes": ["yes", "ya", "sure", "definitely"],
-			"no": ["no", "nope", "nah"]
+			True: ["yes", "ya", "sure", "definitely"],
+			False: ["no", "nope", "nah"]
 		}
 
 		# TODO: add unknown object names into this somehow
@@ -92,6 +98,10 @@ class Robot(ALModule):
 
 		# --- gaze analysis ---
 		self.gaze = ALProxy("ALGazeAnalysis", address, port)
+		# set highest tolerance for determining if people are looking at the robot because those people's IDs are the only ones stored
+		self.gaze.setTolerance(1)
+		# start writing gaze data to robot memory
+		self.gaze.subscribe("_")
 
 		# --- camera ---
 		self.cam = ALProxy("ALVideoDevice", address, port)
@@ -135,6 +145,9 @@ class Robot(ALModule):
 		Has the robot ask a question and returns the answer
 		"""
 
+		# use voice recognition to get response? (defaults to using keyboard)
+		voice_recognition = False
+
 		# If you're just trying to test voice detection, you can uncomment
 		# the following 5 lines. Bobby will guess "yellow flashlight" and will prompt
 		# you to correct him by saying "blue flashlight"
@@ -145,21 +158,41 @@ class Robot(ALModule):
 		# print question
 		# return fake_answers[count - 1]
 
-		# self.say(question)
-		# #starts listening for an answer
-		# self.asr.subscribe("TEST_ASR")
-		# data = (None, 0)
-		# while not data[0]:
-		# 	data = self.mem.getData("WordRecognized")
-		# #stops listening after he hears yes or no
-		# self.asr.unsubscribe("TEST_ASR")
-		#
-		# print data
-		#
-		# for word in self.yes_no_vocab:
-		# 	for syn in self.yes_no_vocab[word]:
-		# 		if data[0] == syn:
-		# 			return word
+		self.say(question)
+
+		if voice_recognition:
+
+			# still needs to be fixed I think, I just uncommented it
+
+			#starts listening for an answer
+			self.asr.subscribe("TEST_ASR")
+			data = (None, 0)
+			while not data[0]:
+				if config.args.gaze:
+					self.trackGaze()
+				data = self.mem.getData("WordRecognized")
+			#stops listening after he hears yes or no
+			self.asr.unsubscribe("TEST_ASR")
+
+			print data
+
+			for answer in self.yes_no_vocab:
+				if data[0] in self.yes_no_vocab[answer]:
+					return answer
+
+		# Temporary clause for testing while speech recognition isn't working
+		else:
+			while True:
+				print question
+				if config.args.gaze:
+					timeout = time.time() + 0.5
+					while not self.personLookingAtRobot() or time.time() < timeout:
+						self.trackGaze()
+				answer = raw_input().lower()[0]
+				if answer == "y":
+					return True
+				elif answer == "n":
+					return False
 
 	def ask_object(self):
 		# TODO: fix this so that speech recognition actually works
@@ -209,6 +242,22 @@ class Robot(ALModule):
 		print self.object_vocab.keys()
 		return raw_input("Type the name of the object as seen above. ")
 
+	def wake(self, stiffness = 1.0):
+		"""
+		Turns stiffnesses on, goes to Crouch position, and lifts head
+		"""
+
+		self.motion.stiffnessInterpolation("Body", stiffness, 1.0)
+		self.pose.goToPosture("Crouch", 0.2)
+		self.turnHead(pitch = math.radians(-10))
+
+	def sit(self):
+		"""
+		Goes to Crouch position
+		"""
+
+		self.pose.goToPosture("Crouch")
+
 	def rest(self):
 		"""
 		Goes to Crouch position and turns robot stiffnesses off
@@ -216,7 +265,7 @@ class Robot(ALModule):
 
 		self.motion.rest()
 
-	def turnHead(yaw = None, pitch = None, speed = 0.3):
+	def turnHead(self, yaw = None, pitch = None, speed = 0.3):
 		"""
 		Turns robot head to the specified yaw and/or pitch in radians at the given speed.
 		Yaw can range from 119.5 deg (left) to -119.5 deg (right) and pitch can range from 38.5 deg (up) to -29.5 deg (down).
@@ -227,67 +276,6 @@ class Robot(ALModule):
 		if not pitch is None:
 			self.motion.setAngles("HeadPitch", pitch, speed)
 
-	def trackFace():
-		"""
-		Sets face tracker to just head and starts.
-		"""
-
-		# start face tracker
-		self.track.setWholeBodyOn(False)
-		self.track.startTracker()
-
-	def subscribeGaze():
-		"""
-		Subscribes to gaze analysis module so that robot starts writing gaze data to memory.
-		Also sets the highest tolerance for determining if people are looking at the robot because those people's IDs are the only ones stored.
-		"""
-
-		self.gaze.subscribe("_")
-		self.gaze.setTolerance(1)
-
-	def getPeopleIDs():
-		"""
-		Retrieves people IDs from robot memory. If list of IDs was empty, return None.
-		"""
-
-		people_ids = self.mem.getData("GazeAnalysis/PeopleLookingAtRobot")
-
-		if len(people_ids) == 0:
-			return None
-
-		return people_ids
-
-	def getRawPersonGaze(person_id):
-		"""
-		Returns person's gaze as a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively.
-		Bases gaze on both eye and head angles. Does not compensate for variable robot head position.
-		"""
-
-		try:
-			# retrieve GazeDirection and HeadAngles values
-			gaze_dir = self.mem.getData("PeoplePerception/Person/" + str(person_id) + "/GazeDirection")
-			head_angles =  self.mem.getData("PeoplePerception/Person/" + str(person_id) + "/HeadAngles")
-
-			# extract gaze direction and head angles data
-			person_eye_yaw = gaze_dir[0]
-			person_eye_pitch = gaze_dir[1]
-
-			person_head_yaw = head_angles[0]
-			person_head_pitch = head_angles[1]
-
-		# RuntimeError: if gaze data can't be retrieved for that person ID anymore (e.g. if bot entirely loses track of person)
-		# IndexError: if gaze direction or head angles are empty lists (e.g. if person's gaze is too steep)
-		except (RuntimeError, IndexError):
-			return None
-
-		else:
-			# combine eye and head gaze values
-			person_gaze_yaw = -(person_eye_yaw + person_head_yaw) # person's left is (-), person's right is (+)
-			person_gaze_pitch = person_eye_pitch + person_head_pitch + math.pi / 2 # all the way up is pi, all the way down is 0
-
-			return [person_gaze_yaw, person_gaze_pitch]
-
-
 	def colorEyes(self, color, fade_duration = 0.2):
 		"""
 		Fades eye LEDs to specified color over the given duration.
@@ -296,9 +284,21 @@ class Robot(ALModule):
 		"""
 
 		if color in self.colors:
-			color = colors[color]
+			color = self.colors[color]
 
 		self.leds.fadeRGB("FaceLeds", color, fade_duration)
+
+	def getHeadAngles(self):
+		"""
+		Returns current robot head angles as a list of yaw, pitch.
+		For yaw, from the robot's POV, left is positive and right is negative. For pitch, up is positive and down is negative.
+		See http://doc.aldebaran.com/2-1/family/robots/joints_robot.html for info on the range of its yaw and pitch.
+		"""
+
+		robot_head_yaw, robot_head_pitch = self.motion.getAngles("Head", False)
+
+		# return adjusted robot head angles
+		return [robot_head_yaw, -robot_head_pitch]
 
 	def resetEyes(self):
 		"""
@@ -323,12 +323,305 @@ class Robot(ALModule):
 
 		self.sound.unsubscribe("sound_detection_client")
 
+	def trackFace(self):
+		"""
+		Sets face tracker to just head and starts.
+		"""
+
+		# start face tracker
+		self.track.setWholeBodyOn(False)
+		self.track.startTracker()
+
+	def stopTrackingFace(self):
+		"""
+		Stops face tracker.
+		"""
+
+		self.track.stopTracker()
+
+	def recordObjectAngles(self, object_angles):
+
+		# initialize confidences for each object
+		self.object_yaws, self.object_pitches = zip(*object_angles)
+		self.angle_error = math.radians(15)
+
+	def initGazeCounts(self):
+		self.gaze_counts = [[yaw, 0] for yaw in self.object_yaws]
+
+	def updatePersonID(self):
+		"""
+		Tries to get people IDs from robot memory.
+		If none are retrieved, tries again every 0.5 seconds until it gets some.
+		Stores the first person ID in the list as self.person_id.
+		"""
+
+		# try to get list of IDs of people looking at robot
+		people_ids = self.mem.getData("GazeAnalysis/PeopleLookingAtRobot")
+
+		# if robot hasn't gotten any people IDs
+		while people_ids is None or len(people_ids) == 0:
+
+			# wait a little bit, then try again
+			time.sleep(0.5)
+			people_ids = self.mem.getData("GazeAnalysis/PeopleLookingAtRobot")
+
+		self.person_id = people_ids[0]
+
+	def updateRawPersonGaze(self):
+		"""
+		Stores person's gaze as a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively.
+		Bases gaze on both eye and head angles. Does not compensate for variable robot head position.
+		"""
+
+		try:
+			# retrieve GazeDirection and HeadAngles values
+			gaze_dir = self.mem.getData("PeoplePerception/Person/" + str(self.person_id) + "/GazeDirection")
+			head_angles =  self.mem.getData("PeoplePerception/Person/" + str(self.person_id) + "/HeadAngles")
+
+			# extract gaze direction and head angles data
+			person_eye_yaw = gaze_dir[0]
+			person_eye_pitch = gaze_dir[1]
+
+			person_head_yaw = head_angles[0]
+			person_head_pitch = head_angles[1]
+
+		# RuntimeError: if gaze data can't be retrieved for that person ID anymore (e.g. if bot entirely loses track of person)
+		# IndexError: if gaze direction or head angles are empty lists (e.g. if person's gaze is too steep)
+		except (RuntimeError, IndexError):
+			self.raw_person_gaze = None
+			self.updatePersonID()
+
+		else:
+			# combine eye and head gaze values
+			self.raw_person_gaze_yaw = -(person_eye_yaw + person_head_yaw) # person's left is (-), person's right is (+)
+			self.raw_person_gaze_pitch = person_eye_pitch + person_head_pitch + math.pi / 2 # all the way up is pi, all the way down is 0
+
+			self.raw_person_gaze = [self.raw_person_gaze_yaw, self.raw_person_gaze_pitch]
+
+	def personLookingAtRobot(self):
+		"""
+		Determines whether the person is looking in the general area of the robot's head.
+		Bases this off of the last cached raw gaze values.
+		"""
+
+		if self.raw_person_gaze is None:
+			return False
+
+		yaw_in_range = abs(self.raw_person_gaze_yaw - 0) < math.radians(15)
+		pitch_in_range = abs(self.raw_person_gaze_pitch - math.radians(90)) < math.radians(20)
+		return (yaw_in_range and pitch_in_range)
+
+	def pitchSumOverTime(self, duration):
+		"""
+		Adds pitch value to a sum every time person looks at robot during the given duration.
+        Even if duration expires, continues waiting until it gets at least one pitch value.
+		Both this sum and the number of times the sum was added to are member variables.
+		"""
+
+		timeout = time.time() + duration
+		while time.time() < timeout or self.pitch_count == 0:
+
+			if self.personLookingAtRobot():
+				# add current pitch to pitch sum
+				self.pitch_sum += self.raw_person_gaze_pitch
+				self.pitch_count += 1
+
+			self.updateRawPersonGaze()
+
+	def findPersonPitchAdjustment(self, person_name = "Person", style = "normal"):
+		"""
+		Stores the adjustment needed to be made to measured gaze pitch values, which it calculates based on the
+		difference between 90 deg and an average measurement of the person's gaze when looking at the robot's eyes.
+		Robot speaks to get straight-on gaze to measure, then filters measurements with personLookingAtRobot().
+		"""
+
+		self.pitch_sum = 0
+		self.pitch_count = 0
+
+		self.updatePersonID()
+
+		self.colorEyes("blue")
+
+		# try get person's attention then wait until they look at us (robot)
+		self.say("Hey " + person_name + "?", block = False)
+
+		self.updateRawPersonGaze()
+
+		while not self.personLookingAtRobot():
+			self.updateRawPersonGaze()
+			time.sleep(0.2)
+		self.pitchSumOverTime(1)
+
+		# finish talking and add to pitch sum while talking
+		self.say("Are you ready to play?", block = False)
+		self.colorEyes("purple")
+		self.pitchSumOverTime(1)
+
+		print "# pitch readings:", self.pitch_count
+		control_pitch = self.pitch_sum / self.pitch_count
+
+		# the pitch adjustment we need to make is the difference between (the measured value at 90 degrees) and (90 degrees)
+		self.person_pitch_adjustment = control_pitch - math.radians(90)
+
+		print "person_pitch_adjustment:", self.person_pitch_adjustment
+
+		# finish talking
+		time.sleep(2)
+		self.say("Okay, let's play!")
+
+	def updatePersonGaze(self):
+		"""
+		Saves person's gaze as a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively.
+		Gets gaze from updateRawPersonGaze function, then compensates for variable robot head position and measured pitch inaccuracy.
+		"""
+
+		self.updateRawPersonGaze()
+
+		if self.raw_person_gaze is None:
+		   self.person_gaze = None
+
+		else:
+			robot_head_yaw, robot_head_pitch = self.getHeadAngles()
+
+			# compensate for variable robot head angles
+			self.person_gaze_yaw = self.raw_person_gaze_yaw - robot_head_yaw # person's left is (-), person's right is (+)
+			self.person_gaze_pitch = self.raw_person_gaze_pitch - robot_head_pitch # all the way up is pi, all the way down is 0
+
+			# compensate for measured pitch inaccuracy
+			self.person_gaze_pitch += self.person_pitch_adjustment
+
+			self.person_gaze = [self.person_gaze_yaw, self.person_gaze_pitch]
+			print "person gaze:", self.person_gaze
+
+	def updatePersonLocation(self):
+		"""
+		Stores person's head location as a list of x, y (right of robot -, left of robot +), and z coordinates
+		in meters relative to spot between robot's feet.
+		"""
+
+		try:
+			self.person_location = self.mem.getData("PeoplePerception/Person/" + str(self.person_id) + "/PositionInRobotFrame")
+
+		except RuntimeError:
+			# print "Couldn't get person's face location"
+			self.person_location = None
+			self.updatePersonID()
+
+		else:
+			self.robot_person_x, self.robot_person_y, self.robot_person_z = self.person_location
+
+	def personLookingAtObjects(self):
+		"""
+		Returns whether the person is looking lower than the robot's feet.
+		"""
+
+		# update and check gaze data
+		self.updatePersonGaze()
+		if self.person_gaze is None:
+			return False
+
+		# update and check location data
+		self.updatePersonLocation()
+		if self.person_location is None:
+			return False
+
+		# threshold angle equals atan of x distance between person + robot divided by person's height
+		threshold_angle = math.atan(self.robot_person_x / self.robot_person_z)
+		print "threshold angle:", threshold_angle
+
+		# if person is looking in the area of the objects (gaze pitch < angle to look at robot's feet)
+		if self.person_gaze_pitch < threshold_angle:
+			self.colorEyes("pink")
+			return True
+
+		self.colorEyes("green")
+		return False
+
+	def updateGazeObjectLocation(self, debug = True):
+		"""
+		Stores location of gaze relative to spot between robot's feet as a list of x, y, z in meters and yaw, pitch in radians.
+		If the person is not looking near the objects, returns None.
+		"""
+
+		if not self.personLookingAtObjects():
+			self.gaze_object_location = None
+
+		else:
+			# calculate x distance between robot and object
+			person_object_x = self.robot_person_z * math.tan(self.person_gaze_pitch)
+			robot_object_x = self.robot_person_x - person_object_x
+
+			# calculate y distance between robot and object (left of robot +, right of robot -)
+			person_object_y = person_object_x * math.tan(self.person_gaze_yaw)
+			robot_object_y = self.robot_person_y + person_object_y
+
+			# calculate robot head yaw needed to gaze at object
+			self.robot_object_yaw = - math.atan(robot_object_y / robot_object_x)
+
+			robot_object_z = 0
+			self.robot_object_pitch = 0
+
+			if debug:
+				print "\tperson gaze:", [math.degrees(angle) for angle in self.person_gaze]
+				print "\tperson loc:", self.person_location
+				print "\tpers obj x", person_object_x
+				print "\tpers obj y", person_object_y
+
+			self.gaze_object_location = [robot_object_x, robot_object_y, robot_object_z, self.robot_object_yaw, self.robot_object_pitch]
+
+	def updateGazeCounts(self, debug = False):
+		"""
+		Determines which object(s) the person is gazing at and adds to the count for those objects.
+		These counts are stored in dictionary self.confidences as {object angle: confidence, ..., object angle: confidence}.
+		"""
+
+		if not self.gaze_object_location is None:
+
+			for index, [obj_yaw, count] in enumerate(self.gaze_counts):
+
+				# if gaze angle is within object_angle_error of the object angle on either side
+				if abs(obj_yaw - self.robot_object_yaw) <= self.angle_error:
+
+					# add 1 to the count (index 1) for that object
+					self.gaze_counts[index][1] += 1
+
+					if debug:
+						print "\t", math.degrees(obj_yaw),
+
+			if debug:
+				print
+
+	def gazeConfidences(self):
+		"""
+		Divides the confidence (gaze count) for each object by the sum of all objects' gaze counts,
+		so that the confidences sum to 100%.
+		"""
+
+		print "Object counts:", [[round(obj_yaw, 2), count] for obj_yaw, count in self.gaze_counts]
+
+		confidence_sum = sum([confidence for obj_yaw, confidence in self.gaze_counts])
+
+		# if we at least got some data
+		if confidence_sum != 0:
+			return [count / confidence_sum for obj_angle, count in self.gaze_counts]
+			print [count / confidence_sum for obj_angle, count in self.gaze_counts]
+
+		return [1] * len(self.gaze_counts)
+
+	def trackGaze(self):
+
+		self.updateGazeObjectLocation()
+		self.updateGazeCounts()
+
 	def count_objects(self):
 		objects = self.segmentation.look_for_objects()
-		return len(objects)
+		return objects
+
 
 #------------------------Main------------------------#
+
 if __name__ == "__main__":
+
 	print "#----------Audio Script----------#"
 
 	connect("bobby.local")

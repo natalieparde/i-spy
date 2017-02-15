@@ -29,29 +29,46 @@ class Object:
 		answer_data = get_all_answers(number_of_objects)
 		NoOfQuestions = 0
 
-		#at the very beginning of a round, each object has an equal chance of getting picked
+		# at the very beginning of a round, each object has an equal chance of getting picked
 		pO = np.array([1/float(number_of_objects)] * number_of_objects)
 
 		askedQuestions = []
 		answers = []
 		split = 0
 
-		while np.sort(pO)[pO.size - 1] - np.sort(pO)[pO.size - 2] < 0.15 and len(askedQuestions) < 15:
+		difference_threshold = 0.15
+
+		# while the best guess is less than 15% probability away from the 2nd-best guess and we've asked fewer than 15 questions
+		while np.sort(pO)[pO.size - 1] - np.sort(pO)[pO.size - 2] < difference_threshold and len(askedQuestions) < 15:
 			# Find best question (aka gives most info)
 			best_question = questions.get_best(game, objects, askedQuestions, pO, Pi, split, number_of_objects)
 			# Save under questions already asked
 			askedQuestions.append(best_question)
-			# Get updated probabilies based on the answer to the question
+			# Ask question and update probabilies based on the answer
 			pO, answers = questions.ask(best_question, self, game, answers, pO, Pi, objects, number_of_objects, answer_data)
+			if config.args.gaze:
+				gaze_confidences = robot().gazeConfidences()
+
+				gaze_weight = 0.7
+				print "pO:",
+				for p in pO:
+					print round(p, 2) * 100, ' ',
+				print
+				pO = np.array([(question_prob * (1 - gaze_weight)) + (question_prob * gaze_prob * gaze_weight) for question_prob, gaze_prob in zip(pO, gaze_confidences)])
+				print "Gp:",
+				for p in pO:
+					print round(p, 2) * 100, ' ',
+				print
+
 			# Split the current subset into two more subsets
 			split = questions.get_subset_split(pO, number_of_objects)
 		log.info('Finished asking %d questions', len(askedQuestions))
 
 		# Get most likely object
 		minimum=np.max(pO)
-		itemindexes =[i for i,x in enumerate(pO) if x==minimum]
-		A = np.asarray([[o] for o in get_all()])
-		guess = A[itemindexes][0][0]
+		itemindexes = [i for i,x in enumerate(pO) if x==minimum]
+		objects = np.asarray([[obj] for obj in get_all()])
+		guess = objects[itemindexes][0][0]
 
 		# Guess object (Compare what the system thinks is most likely to object currenly in play)
 		result = self._guess_object(guess)
@@ -64,9 +81,9 @@ class Object:
 
 	def gen_init_prob(self, number_of_objects):
 		"""
-		Fetches the proportions of yes answers
-		Returns a list containing sub-lists, each corresponding to an object
-		Each sub-list contains 289 tuples, one per question
+		Fetches proportions of yes answers for question/object combos
+		Returns a list containing a sublist for each object
+		Each object's sub-list contains 289 tuples, one for each question
 		Each tuple is in the form of (yes_answers, total_answers)
 		"""
 
@@ -110,7 +127,6 @@ class Object:
 		else:
 			result = 'win'
 
-
 		# TODO: clean up all the text files because this is kind of ridiculous
 		with open("game.txt", "a") as myfile:
 			myfile.write(str(game.id)+','+ str(self.id) +','+ str(guess.name)+"," + str(self.name) + "," + str(len(game_questions)) + "," + result  +  "\n")
@@ -127,6 +143,7 @@ class Object:
 		"""
 		Compare the object that the system thinks is most likely to the object currently in play
 		"""
+
 		if config.args.notsimulated:
 			self.id, self.name = get_actual(guess)
 		if self.id == guess.id:
@@ -135,6 +152,7 @@ class Object:
 		else:
 			log.info('Lose [Guess: %s | Actual: %s]', guess.name, self.name)
 			return 0
+
 
 	def __init__(self, id, name):
 		# assigns an ID as a placeholder because we can't read the person's mind
@@ -150,7 +168,6 @@ def get(object_id):
 	Get a specific object based on id
 	"""
 
-	global _objects
 	return get_all()[object_id-1]
 
 
@@ -158,6 +175,7 @@ def get_all():
 	"""
 	Returns a list of all objects
 	"""
+
 	# TODO: make sure new objects have already been written into the database
 	global _objects
 	if not _objects:
@@ -166,15 +184,16 @@ def get_all():
 			_objects.append(Object(obj[0], obj[1]))
 	return _objects
 
+
 def get_actual(guess):
 	"""
 	Returns the object the human player was thinking of
 	"""
 
 	global _objects
-	yn = interface.ask("My guess is %s. Was I right? " % guess.name)
+	answer = interface.ask("My guess is %s. Was I right? " % guess.name)
 
-	if yn == "yes":
+	if answer:
 		obj_name = guess.name
 		obj_id = guess.id
 	else:
@@ -196,7 +215,9 @@ def get_actual(guess):
 			if check == True:
 				break
 			obj_name = raw_input("It seems as though you mistyped. Please try typing the name of your object again. ")
+
 	return obj_id, obj_name
+
 
 def get_all_answers(number_of_objects):
 	"""
@@ -209,7 +230,7 @@ def get_all_answers(number_of_objects):
 	if not _answers:
 		_answers = []
 
-		db.cursor.execute('SELECT answer FROM Answers')
+		db.cursor.execute('SELECT answer FROM reference_answers')
 		questionanswers = db.cursor.fetchall()
 
 		answercnt = 0
@@ -219,7 +240,8 @@ def get_all_answers(number_of_objects):
 			for objcnt in range(17):
 				_answers[gamecnt].append([])
 				for tagcnt in range(289):
-					_answers[gamecnt][objcnt].append(int(questionanswers[answercnt][0]))
+					answer = int(questionanswers[answercnt][0])
+					_answers[gamecnt][objcnt].append(answer)
 					answercnt += 1
 
 		# total_length = 0

@@ -147,4 +147,4 @@ def find_objects():
 
 		old_objects = new_objects
 	out_video.release()
-	return objects
+	return [obj.angles for obj in objects]

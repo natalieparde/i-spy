@@ -38,10 +38,16 @@ class Game:
 		question_answers = {}
 		questions_asked = {}
 		objlist = objects.get_all()
-		# For each object in the set
 		count = 0
 
+		# quit variable passed to main that tells if user wants to quit
+		quit = False
+
+		# For each object in the set
 		for i in objlist:
+			if robot():
+				robot().initGazeCounts()
+
 			if config.args.notsimulated:
 				for j in range(len(objlist)):
 					print objlist[j].name
@@ -68,16 +74,18 @@ class Game:
 			count += 1
 
 			if config.args.notsimulated == True:
-				quit = interface.ask("Would you like to quit this game early? \nThere are %d rounds left. " % (17 - count))
-				if quit == "yes":
+				quit = not interface.ask("Do you want to play again?")
+				# quit = interface.ask("Would you like to quit this game early? \nThere are %d rounds left. " % (17 - count))
+				if quit:
 					break
+
 		# Save results
 		self._record(round_wins, round_losses, NoOfQuestions, count)
 
 		end = time.time()
 		log.info("Game %d complete (Took %ds)", self.id, int(end - start))
 
-		return round_wins, round_losses, NoOfQuestions, avg_win, avg_lose, question_answers, questions_asked
+		return round_wins, round_losses, NoOfQuestions, avg_win, avg_lose, question_answers, questions_asked, quit
 
 	def _record(self, wins, losses, num_questions, number_of_objects_played):
 		"""

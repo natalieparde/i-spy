@@ -1,7 +1,10 @@
 import os
 import time
+import sys
+import math
 import logging as log
 import argparse
+import traceback
 
 config = None
 
@@ -34,20 +37,12 @@ class Main:
 		if config.args.setup:
 			self.setup()
 
-		if robot.robot():
-			log.info("Robot is counting objects")
-			self.number_of_objects = robot.robot().count_objects()
-			robot.robot().say("I see %d objects" % self.number_of_objects, False)
-			log.info("%d objects detected", self.number_of_objects)
-			self.number_of_objects = 17
-
 		# runtime does not include the time it took to run setup since it should only be run once
 		start = time.time()
 		self.simulate()
 		end = time.time()
 
 		log.info('Simulation complete! (Took %ds)', int(end - start))
-
 
 	def simulate(self):
 		"""
@@ -66,13 +61,42 @@ class Main:
 		questions_asked = {}
 		question_answers = {}
 
-		# TODO: Noelle - calibrate your gaze tracker here, unless it's better to do it at the beginning of every game/round
+		if robot.robot():
+
+			# # count objects
+			# log.info("Robot is counting objects")
+			# self.object_angles = robot.robot().count_objects()
+			# for obj in self.object_angles:
+			# 	print "OBJECT"
+			# 	print "\t", obj
+			# self.number_of_objects = len(self.object_angles)
+			# robot.robot().say("I see %d objects" % self.number_of_objects, False)
+			# log.info("%d objects detected", self.number_of_objects)
+			# # log.info("Objects detected at the following angles: " + str(self.object_angles))
+			# self.number_of_objects = 17
+			# robot.robot().rest()
+
+			# temporary manual input of object angles (obj 1 -> obj 17 from robot's right to left in 2 staggered rows)
+			# self.object_angles = [[index * 0.123 - math.pi/3, 0] for index in range(17)]
+
+			raw_angles = [-54]*3 + [-36]*3 + [-18]*3 + [18]*3 + [36]*3 + [54]*2
+			self.object_angles = [[math.radians(angle), 0] for angle in raw_angles]
+
+			# start face tracking and initialize gaze tracking
+			robot.robot().wake(0.7)
+			time.sleep(0.5)
+			robot.robot().trackFace()
+
+			if config.args.gaze:
+				time.sleep(0.5)
+				robot.robot().recordObjectAngles(self.object_angles)
+				robot.robot().findPersonPitchAdjustment()
 
 		for number in range(16, 31):
 			# TODO: make the number of games configurable??
 			game = Game(number)
 
-			game_wins, game_losses, game_num_questions, game_win_avg, game_lose_avg, game_answers, game_questions = game.playGame(self.number_of_objects)
+			game_wins, game_losses, game_num_questions, game_win_avg, game_lose_avg, game_answers, game_questions, quit = game.playGame(self.number_of_objects)
 
 			# dictionaries with complete list of questions asked and the corresponding answers
 			questions_asked[game.id] = game_questions
@@ -90,8 +114,8 @@ class Main:
 				models.build(game, 3, self.number_of_objects, questions_asked, question_answers)
 
 			if config.args.notsimulated:
-				quit = interface.ask("Would you like to stop playing completely? \nThere are %d games left. " % (30 - number))
-				if quit == "yes":
+				# quit = interface.ask("Would you like to stop playing completely? \nThere are %d games left. " % (30 - number))
+				if quit:
 					break
 
 		log.info("Overall Wins: %d Overall Losses: %d", wins, losses)
@@ -103,6 +127,9 @@ class Main:
 
 		if config.args.robot:
 			# TODO: remove this when we fix the robot class
+			robot.robot().stopTrackingFace()
+			robot.robot().gaze.unsubscribe("_")
+			robot.robot().rest()
 			robot.broker.shutdown()
 
 	def setup(self):
@@ -164,12 +191,17 @@ def _config():
 	parser.add_argument("-t", "--socket", help="path to MySQL socket", default=config.db["socket"])
 	parser.add_argument("-r", "--robot", action="store_true", help="runs code using robot")
 	parser.add_argument("--address", help="the robot's ip address", default=config.robot["address"])
+	parser.add_argument("-g", "--gaze", action="store_true", help="uses person's gaze to help guess object")
 
 	args = parser.parse_args()
 
+	# if you're using the robot then by default you have to provide the answers
 	if args.robot:
-		#if you're using the robot then by default you have to provide the answers
 		args.notsimulated = True
+
+	# if you're not using the robot then you can't use gaze analysis
+	else:
+		args.gaze = False
 
 	config.args = args
 
@@ -183,4 +215,11 @@ if __name__ == '__main__':
 	import database as db
 	import robot
 	import interface
-	Main()
+
+	try:
+		Main()
+
+	except Exception as e:
+		print traceback.format_exc()
+		if config.args.robot:
+			robot.robot().rest()
