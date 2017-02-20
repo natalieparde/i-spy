@@ -389,7 +389,9 @@ def find_objects_computer():
          cv2.imshow("Segment " + str(segment_counter), roi)
 
          # Write the segment to a file so we can look at it later too.
-         segment_file_name = "segments/s" + str(segment_counter) + "_" + image_file.replace(path, "")
+         segment_file_name = "segments/s" + str(segment_counter) + "_" + image_file.replace(path, "").strip("/").strip("\\")
+         if not os.path.exists("segments"):  # Create the "segments" directory if it does not exist yet.
+            os.makedirs("segments")
          cv2.imwrite(segment_file_name, roi)
 
          # Use TensorFlow to classify the segment.
