@@ -7,6 +7,7 @@ import math
 #from naoqi import ALModule
 
 import numpy as np
+import glob
 import cv2
 import os
 import re
@@ -326,15 +327,15 @@ def find_objects_computer():
    old_objects = []
    
    path = "/home/parde/Documents/iSpy_images/GameImages/Game1/"
-   game1_image_files = os.listdir(path)
+   game1_image_files = glob.glob(os.path.join(path, "*.jpg"))
    maybe_download_and_extract()
 
    # Creates graph from saved GraphDef.
    create_graph()
 
    for image_file in game1_image_files:
-      print "Reading image: " + path + image_file
-      frame = cv2.imread(path + image_file)
+      print "Reading image: " + image_file
+      frame = cv2.imread(image_file)
 
       old_found = []
       new_contours = []
@@ -388,7 +389,7 @@ def find_objects_computer():
          cv2.imshow("Segment " + str(segment_counter), roi)
 
          # Write the segment to a file so we can look at it later too.
-         segment_file_name = "segments/s" + str(segment_counter) + "_" + image_file
+         segment_file_name = "segments/s" + str(segment_counter) + "_" + image_file.replace(path, "")
          cv2.imwrite(segment_file_name, roi)
 
          # Use TensorFlow to classify the segment.
