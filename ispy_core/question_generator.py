@@ -14,6 +14,7 @@ import nltk
 import random
 import collections
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 class QuestionGenerator:
 
@@ -22,6 +23,10 @@ class QuestionGenerator:
    # POS tag (e.g., "is it <JJ> ?" may be stored in the list of templates
    # associated with tag "JJ").
    def build_templates(self):
+      # Print an error message before crashing of the user doesn't have a copy of collected_questions.txt.
+      if not os.path.exists("collected_questions"):
+         print "Couldn't find collected_questions.txt!  If you don't have a copy, email Natalie Parde.  If you do have a copy, make sure it's in the same directory as this file."
+         
       # Read in the questions collected from the online version of "I Spy."
       print "Reading questions from the online version of \"I Spy\"...."
       online_question_file = open("collected_questions.txt")
@@ -132,11 +137,17 @@ class QuestionGenerator:
       if search_param in cache_dict:
          self.question_results = cache_dict[search_param]
       else:  # Run a new search.
-         service = build("customsearch", "v1", developerKey=api_key)
-         self.question_results = service.cse().list(q=search_param, exactTerms=question.strip('?!.').strip(), cx=cse_id).execute()
-
-         # Add the results to the cache.
-         cache_writer.write(search_param + "||" + json.dumps(self.question_results) + "\n")
+         try:
+            service = build("customsearch", "v1", developerKey=api_key)
+            self.question_results = service.cse().list(q=search_param, exactTerms=question.strip('?!.').strip(), cx=cse_id).execute()
+            
+            # Add the results to the cache.
+            cache_writer.write(search_param + "||" + json.dumps(self.question_results) + "\n")
+         except HttpError as e:
+            print e
+            self.question_results = {}
+            self.question_results["searchInformation"] = {}
+            self.question_results["searchInformation"]["totalResults"] = 0
       self.question_results_count = self.question_results["searchInformation"]["totalResults"]
 
 
@@ -147,11 +158,17 @@ class QuestionGenerator:
       if search_param in cache_dict:
          self.word_results = cache_dict[search_param]
       else:  # Run a new search.
-         service = build("customsearch", "v1", developerKey=api_key)
-         self.word_results = service.cse().list(q=search_param, cx=cse_id).execute()
+         try:
+            service = build("customsearch", "v1", developerKey=api_key)
+            self.word_results = service.cse().list(q=search_param, cx=cse_id).execute()
 
-         # Add the results to the cache.
-         cache_writer.write(search_param + "||" + json.dumps(self.word_results) + "\n")
+            # Add the results to the cache.
+            cache_writer.write(search_param + "||" + json.dumps(self.word_results) + "\n")
+         except HttpError as e:
+            print e
+            self.word_results = {}
+            self.word_results["searchInformation"] = {}
+            self.word_results["searchInformation"]["totalResults"] = 0
       self.word_results_count = self.word_results["searchInformation"]["totalResults"]
 
 
@@ -162,11 +179,17 @@ class QuestionGenerator:
       if search_param in cache_dict:
          self.template_results = cache_dict[search_param]
       else:  # Run a new search.
-         service = build("customsearch", "v1", developerKey=api_key)
-         self.template_results = service.cse().list(q=search_param, exactTerms=search_param.strip("\"").strip('?!.').strip(), cx=cse_id).execute()
+         try:
+            service = build("customsearch", "v1", developerKey=api_key)
+            self.template_results = service.cse().list(q=search_param, exactTerms=search_param.strip("\"").strip('?!.').strip(), cx=cse_id).execute()
 
-         # Add the results to the cache.
-         cache_writer.write(search_param + "||" + json.dumps(self.template_results) + "\n")
+            # Add the results to the cache.
+            cache_writer.write(search_param + "||" + json.dumps(self.template_results) + "\n")
+         except HttpError as e:
+            print e
+            self.template_results = {}
+            self.template_results["searchInformation"] = {}
+            self.template_results["searchInformation"]["totalResults"] = 0
       self.template_results_count = self.template_results["searchInformation"]["totalResults"]
 
       cache_writer.close()
