@@ -7,10 +7,13 @@
 #
 ###############################################################################
 
+import os
 import re
+import json
 import nltk
 import random
 import collections
+from googleapiclient.discovery import build
 
 class QuestionGenerator:
 
@@ -96,6 +99,81 @@ class QuestionGenerator:
       question = re.sub(r"<[A-Z]+>", word, template)  # Use a regular expression to replace the tag specification (e.g., "<JJ>") with the word.
       return question
 
+   # Get the Google search result totals for:
+   # - the exact surface realization
+   # - the attribute word in the question
+   # - the surface realization, allowing a "wildcard" in place of the attribute word
+   def get_search_result_counts(self, question, word, template):
+      api_key = "AIzaSyBIdqWQXYDpGLWgh3z2QEY4lnRv8CSjSzU"  # Enter your Google API key here.
+      cse_id = "007446023248893782813:jvy6fqoh1km"  # Enter your custom search engine ID here.
+
+      # Check the record of terms that have already been searched to determine
+      # whether or not a new search needs to be created.  Not necessary, but useful
+      # since we only have a limited number of free searches.
+      if not os.path.exists("search_cache.json"):
+         open("search_cache.json", "a").close()  # Create the cache file if it doesn't exist.
+
+      # Read the data, and index it by search term, so the dictionary is: key:search term -> value:json object.
+      cache_data = open("search_cache.json")
+      cache_dict = {}
+      for line in cache_data:
+         columns = line.split("||")  # Columns are delimited by double pipes.
+         json_line = json.loads(columns[1])
+         cache_dict[columns[0]] = json_line  # key: term -> value: json line
+      cache_data.close()
+
+      # Now re-open the file for writing.
+      cache_writer = open("search_cache.json", "a")
+
+      # Checking for the exact surface realization....
+      search_param = "\"" + question + "\""
+
+      # Check to see if the search parameter is included in the cached results.
+      if search_param in cache_dict:
+         self.question_results = cache_dict[search_param]
+      else:  # Run a new search.
+         service = build("customsearch", "v1", developerKey=api_key)
+         self.question_results = service.cse().list(q=search_param, exactTerms=question.strip('?!.').strip(), cx=cse_id).execute()
+
+         # Add the results to the cache.
+         cache_writer.write(search_param + "||" + json.dumps(self.question_results) + "\n")
+      self.question_results_count = self.question_results["searchInformation"]["totalResults"]
+
+
+      # Checking for the attribute word in the question....
+      search_param = word
+
+      # Check to see if the search parameter is included in the cached results.
+      if search_param in cache_dict:
+         self.word_results = cache_dict[search_param]
+      else:  # Run a new search.
+         service = build("customsearch", "v1", developerKey=api_key)
+         self.word_results = service.cse().list(q=search_param, cx=cse_id).execute()
+
+         # Add the results to the cache.
+         cache_writer.write(search_param + "||" + json.dumps(self.word_results) + "\n")
+      self.word_results_count = self.word_results["searchInformation"]["totalResults"]
+
+
+      # Checking for the surface realization, allowing a "wildcard" (*) instead of the attribute word.
+      search_param = "\"" + re.sub(r"<[^>]+>", "*", template) + "\""
+
+      # Check to see if the search parameter is included in the cached results.
+      if search_param in cache_dict:
+         self.template_results = cache_dict[search_param]
+      else:  # Run a new search.
+         service = build("customsearch", "v1", developerKey=api_key)
+         self.template_results = service.cse().list(q=search_param, exactTerms=search_param.strip("\"").strip('?!.').strip(), cx=cse_id).execute()
+
+         # Add the results to the cache.
+         cache_writer.write(search_param + "||" + json.dumps(self.template_results) + "\n")
+      self.template_results_count = self.template_results["searchInformation"]["totalResults"]
+
+      cache_writer.close()
+      print "Question Results:", self.question_results_count
+      print "Word Results:", self.word_results_count
+      print "Template Results:", self.template_results_count
+
    def Main(self):
       self.build_templates()
       word = "orange"
@@ -104,6 +182,7 @@ class QuestionGenerator:
       selected_template = self.select_template(templates)
       question = self.realize_question(word, selected_template)
       print question
+      self.get_search_result_counts(question, word, selected_template)
 
 if __name__ == '__main__':
    qg = QuestionGenerator()
