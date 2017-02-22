@@ -24,7 +24,7 @@ class QuestionGenerator:
    # associated with tag "JJ").
    def build_templates(self):
       # Print an error message before crashing of the user doesn't have a copy of collected_questions.txt.
-      if not os.path.exists("collected_questions"):
+      if not os.path.exists("collected_questions.txt"):
          print "Couldn't find collected_questions.txt!  If you don't have a copy, email Natalie Parde.  If you do have a copy, make sure it's in the same directory as this file."
          
       # Read in the questions collected from the online version of "I Spy."
