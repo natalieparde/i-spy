@@ -10,6 +10,7 @@
 import os
 import re
 import json
+import math
 import nltk
 import random
 import collections
@@ -197,6 +198,43 @@ class QuestionGenerator:
       print "Word Results:", self.word_results_count
       print "Template Results:", self.template_results_count
 
+   # Using plus-one smoothing, compute the pointwise mutual information between 
+   # the attribute word and the template as:
+   # PMI(n_t, n_w) = log(p(n_q)/(p(n_t) * p(n_w)))
+   def compute_pmi(self, question):
+      # Plus-one smoothing.
+      n_q = float(self.question_results_count) + 1
+      n_t = float(self.template_results_count) + 1
+      n_w = float(self.word_results_count) + 1
+
+      # Compute probabilities based on Google Web1T counts.
+      # E.g., p(x) = freq(x) / freq(all unigrams) or p(x y z) = freq(x y z) / freq(all trigrams)
+      num_unigrams = 1024301526820.0
+      num_bigrams = 909808023212.0
+      num_trigrams = 737755957564
+      num_fourgrams = 507166847446.0
+      num_fivegrams = 352338622536.0  # Since we don't have greater than 5-grams, we'll count this as 5+.
+      
+      num_words_in_question = len(question.split())
+      total_count = num_unigrams
+      if num_words_in_question == 2:
+         total_count = num_bigrams
+      elif num_words_in_question == 3:
+         total_count = num_trigrams
+      elif num_words_in_question == 4:
+         total_count = num_fourgrams
+      elif num_words_in_question >= 5:
+         total_count = num_fivegrams
+
+      p_q = n_q / total_count
+      p_t = n_t / total_count
+      p_w = n_w / num_unigrams
+
+      pmi = math.log(p_q / (p_t * p_w))  # Computing PMI.
+
+      print "PMI:", pmi
+      return pmi
+
    def Main(self):
       self.build_templates()
       word = "orange"
@@ -206,6 +244,7 @@ class QuestionGenerator:
       question = self.realize_question(word, selected_template)
       print question
       self.get_search_result_counts(question, word, selected_template)
+      pmi = self.compute_pmi(question)
 
 if __name__ == '__main__':
    qg = QuestionGenerator()
