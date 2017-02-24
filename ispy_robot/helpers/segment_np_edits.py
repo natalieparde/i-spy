@@ -15,6 +15,9 @@ import re
 import tensorflow as tf
 from six.moves import urllib
 from scipy.ndimage import label
+from scipy import ndimage
+from skimage.feature import peak_local_max
+from skimage.morphology import watershed
 import tarfile
 
 # Modified TensorFlow sample code from classify_image.py
@@ -408,8 +411,8 @@ def find_objects_computer():
    return [obj.angles for obj in objects]
 
 
-# Alternate segmentation method (basically an implementation of this StackOverflow
-# post: http://stackoverflow.com/a/14617359
+# Alternate segmentation method (basically followed a variety of online tutorials
+# describing how to implement OpenCV's Watershed algorithm).
 def find_objects_alternate_seg():
    """
    Process the images located in the specified folder and determine object information
@@ -432,35 +435,67 @@ def find_objects_alternate_seg():
    for image_file in game1_image_files:
       print "Reading image: " + image_file
       frame = cv2.imread(image_file)
+      frame_copy = frame.copy()
       grayscale = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-      ret, thresh = cv2.threshold(grayscale,0,255,cv2.THRESH_OTSU)
-      img_bin = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, np.ones((3, 3), dtype=int))
+      ret, thresh = cv2.threshold(grayscale,0,255, cv2.THRESH_OTSU)
 
-      border = cv2.dilate(img_bin, None, iterations=5)
-      border = border - cv2.erode(border, None)
+      dt = ndimage.distance_transform_edt(thresh)
+      local_max = peak_local_max(dt, indices=False, min_distance=20, labels=thresh)
+      markers = ndimage.label(local_max, structure=np.ones((3, 3)))[0]
 
-      dt = cv2.distanceTransform(img_bin, 2, 3)
-      dt = ((dt - dt.min()) / (dt.max() - dt.min()) * 255).astype(np.uint8)
-      _, dt = cv2.threshold(dt, 180, 255, cv2.THRESH_BINARY)
-      lbl, ncc = label(dt)
-      lbl = lbl * (255/ncc)
-      # Completing the markers now. 
-      lbl[border == 255] = 255
+      labels = watershed(-dt, markers, mask=thresh)
 
-      lbl = lbl.astype(np.int32)
-      cv2.watershed(frame, lbl)
+      # Then loop through the segments.
+      segment_counter = 0
+      for seg in np.unique(labels):
+         if seg != 0:  # 0 seems to be the good segments.
+            continue
 
-      lbl[lbl == -1] = 0
-      lbl = lbl.astype(np.uint8)
+         # Allocate memory for the label region and draw it on the mask.
+         mask = np.zeros(grayscale.shape, dtype="uint8")
+         mask[labels == seg] = 255
 
-      result = 255 - lbl
-      result[result != 255] = 0
-      result = cv2.dilate(result, None)
-      frame[result == 255] = (0, 0, 255)
+         # Detect contours and get the largest contour.
+         contours = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+         for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
 
-      cv2.namedWindow("Watershed Image")
-      cv2.imshow("Watershed Image", frame)
-      cv2.waitKey(0)  # Wait until the image is manually closed to continue.
+            if h < 20 or w < 20:  # Too small of a segment.
+               continue
+            elif h > 200 or w > 200:  # Too big of a segment.
+               continue
+
+            # Draw the minimum rectangle onto the original image.
+            min_rectangle = cv2.minAreaRect(contour)
+            box = cv2.boxPoints(min_rectangle)
+            box = np.int0(box)
+            cv2.drawContours(frame, [box], 0, (0, 0, 255), 2)
+
+            # Display segment.
+            roi = frame_copy[y:(y+h), x:(x+w)]
+
+            print "Displaying segment now...."
+            cv2.namedWindow("Segment " + str(segment_counter))
+            cv2.imshow("Segment " + str(segment_counter), roi)
+
+            # Write the segment to a file so we can look at it later too.
+            segment_file_name = "segments/s" + str(segment_counter) + "_" + image_file.replace(path, "").strip("/").strip("\\")
+            if not os.path.exists("segments"):  # Create the "segments" directory if it does not exist yet.
+               os.makedirs("segments")
+            cv2.imwrite(segment_file_name, roi)
+
+            # Use TensorFlow to classify the segment.
+            object_name, score = run_inference_on_image(segment_file_name)
+            print('%s (score = %.5f)' % (object_name, score))
+            cv2.waitKey(0)  # Wait until the image is manually closed to continue.
+            segment_counter += 1
+      # Show the original image with rectangles drawn on it.
+      print "Displaying original image...."
+      cv2.namedWindow("Original Image")
+      cv2.imshow("Original Image", frame)
+      cv2.imwrite("segments/" + image_file.replace(path, "").strip("/").strip("\\"), frame)
+      cv2.waitKey(0)
+
 
 if __name__ == '__main__':
    find_objects_alternate_seg()
