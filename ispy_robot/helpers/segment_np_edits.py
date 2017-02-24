@@ -14,6 +14,7 @@ import re
 
 import tensorflow as tf
 from six.moves import urllib
+from scipy.ndimage import label
 import tarfile
 
 # Modified TensorFlow sample code from classify_image.py
@@ -406,5 +407,60 @@ def find_objects_computer():
       old_objects = new_objects
    return [obj.angles for obj in objects]
 
+
+# Alternate segmentation method (basically an implementation of this StackOverflow
+# post: http://stackoverflow.com/a/14617359
+def find_objects_alternate_seg():
+   """
+   Process the images located in the specified folder and determine object information
+   Returns an array of Objects
+   """
+
+ #  fourcc = cv2.cv.CV_FOURCC('M','J','P','G')  # Comment this if using OpenCV 3+
+   fourcc = cv2.VideoWriter_fourcc('M', 'J', 'P', 'G')  # Comment this if using OpenCV < 3.0
+
+   objects = []
+   old_objects = []
+   
+   path = "/home/parde/Documents/iSpy_images/GameImages/Game1/"
+   game1_image_files = glob.glob(os.path.join(path, "*.jpg"))
+   maybe_download_and_extract()
+
+   # Creates graph from saved GraphDef.
+   create_graph()
+
+   for image_file in game1_image_files:
+      print "Reading image: " + image_file
+      frame = cv2.imread(image_file)
+      grayscale = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+      ret, thresh = cv2.threshold(grayscale,0,255,cv2.THRESH_OTSU)
+      img_bin = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, np.ones((3, 3), dtype=int))
+
+      border = cv2.dilate(img_bin, None, iterations=5)
+      border = border - cv2.erode(border, None)
+
+      dt = cv2.distanceTransform(img_bin, 2, 3)
+      dt = ((dt - dt.min()) / (dt.max() - dt.min()) * 255).astype(np.uint8)
+      _, dt = cv2.threshold(dt, 180, 255, cv2.THRESH_BINARY)
+      lbl, ncc = label(dt)
+      lbl = lbl * (255/ncc)
+      # Completing the markers now. 
+      lbl[border == 255] = 255
+
+      lbl = lbl.astype(np.int32)
+      cv2.watershed(frame, lbl)
+
+      lbl[lbl == -1] = 0
+      lbl = lbl.astype(np.uint8)
+
+      result = 255 - lbl
+      result[result != 255] = 0
+      result = cv2.dilate(result, None)
+      frame[result == 255] = (0, 0, 255)
+
+      cv2.namedWindow("Watershed Image")
+      cv2.imshow("Watershed Image", frame)
+      cv2.waitKey(0)  # Wait until the image is manually closed to continue.
+
 if __name__ == '__main__':
-   find_objects_computer()
+   find_objects_alternate_seg()
