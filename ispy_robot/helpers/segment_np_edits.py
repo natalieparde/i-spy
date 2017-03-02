@@ -1,4 +1,7 @@
 import sys
+sys.path.insert(0, "../../ispy_core/")  # The path (on your computer) to learn_new_object.py
+import learn_new_object
+
 import time
 import math
 
@@ -424,6 +427,7 @@ def find_objects_alternate_seg():
 
    objects = []
    old_objects = []
+   object_names = []  # A list of the names of objects identified in the gamespace (including new objects).
    
    path = "/home/parde/Documents/iSpy_images/GameImages/Game1/"
    game1_image_files = glob.glob(os.path.join(path, "*.jpg"))
@@ -487,7 +491,22 @@ def find_objects_alternate_seg():
             # Use TensorFlow to classify the segment.
             object_name, score = run_inference_on_image(segment_file_name)
             print('%s (score = %.5f)' % (object_name, score))
+
             cv2.waitKey(0)  # Wait until the image is manually closed to continue.
+
+            # Decide whether or not this is an unknown object.
+            recognition_threshold = 0.9  # Subject to change.
+            if score < recognition_threshold:  # If not recognized with a high probability, ask the user about this object and add a model for this object to the existing ImageNet model.
+               name = learn_new_object.get_name()
+               print name
+
+               # TODO: Determine whether this object is really unknown by comparing the name to the object names the robot already knows.
+
+               # Add this name to the list of object names in the game space.
+               object_names.append(name)
+            else:  # Otherwise, add the name of this object to the list of recognized objects.
+               object_names.append(object_name)
+
             segment_counter += 1
       # Show the original image with rectangles drawn on it.
       print "Displaying original image...."
@@ -495,6 +514,7 @@ def find_objects_alternate_seg():
       cv2.imshow("Original Image", frame)
       cv2.imwrite("segments/" + image_file.replace(path, "").strip("/").strip("\\"), frame)
       cv2.waitKey(0)
+   print "The following objects were found in the gamespace:\n", "\n".join(object_names)
 
 
 if __name__ == '__main__':
