@@ -428,7 +428,8 @@ def find_objects_alternate_seg():
    objects = []
    old_objects = []
    object_names = []  # A list of the names of objects identified in the gamespace (including new objects).
-   
+   retrain_models = False
+
    path = "/home/parde/Documents/iSpy_images/GameImages/Game1/"
    game1_image_files = glob.glob(os.path.join(path, "*.jpg"))
    maybe_download_and_extract()
@@ -500,7 +501,13 @@ def find_objects_alternate_seg():
                name = learn_new_object.get_name()
                print name
 
-               # TODO: Determine whether this object is really unknown by comparing the name to the object names the robot already knows.
+               # Determine whether this object is really unknown, and if so,
+               # set a flag so the program will know to retrain its object and
+               # attribute models with newly learned information once all (if
+               # there are any additional) new objects are learned.
+               is_really_new = learn_new_object.get_info(name)
+               if is_really_new:
+                  retrain_models = True
 
                # Add this name to the list of object names in the game space.
                object_names.append(name)
