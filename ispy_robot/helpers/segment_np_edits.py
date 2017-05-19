@@ -499,7 +499,7 @@ def find_objects_alternate_seg():
             recognition_threshold = 0.9  # Subject to change.
             if score < recognition_threshold:  # If not recognized with a high probability, ask the user about this object and add a model for this object to the existing ImageNet model.
                name = learn_new_object.get_name()
-               print name
+               print name  # We can delete this line later; it's just useful for now to see what the program thinks the name is.
 
                # Determine whether this object is really unknown, and if so,
                # set a flag so the program will know to retrain its object and

@@ -93,11 +93,29 @@ class QuestionGenerator:
    def select_template(self, templates):
       if len(templates) < 5:  # Select the template that occurred most frequently.
          template = templates.most_common(1)
+      #   print templates
          return template[0][0]  # List of size one, template is the first element of the first tuple.
       else:  # Select randomly from among the top five templates.
          top_templates = templates.most_common(5)
          random_num = random.randint(0,4)
+     #    print templates
          return top_templates[random_num][0]  # randomth tuple, template is the tuple's first element.
+
+   # Get templates that occur more than twice.
+   def get_frequent_templates(self, templates):
+      for template in templates:
+         if template[1] > 2:
+            print template
+
+   # Get the five most common templates that are input.
+   def get_most_common_templates(self, templates):
+      common_templates = templates.most_common(5)
+    #  print common_templates
+      most_common = []
+      for x in range(0, len(common_templates)):
+     #    print common_templates[x]
+         most_common.append(common_templates[x][0])
+      return most_common
 
    # Construct a surface realization for the sentence by inserting the specified
    # word into the correct location of the template.
@@ -241,10 +259,16 @@ class QuestionGenerator:
       tag = self.get_pos_for_word(word)
       templates = self.get_templates_for_pos(tag)
       selected_template = self.select_template(templates)
+      possible_templates = self.get_most_common_templates(templates)
       question = self.realize_question(word, selected_template)
-      print question
-      self.get_search_result_counts(question, word, selected_template)
-      pmi = self.compute_pmi(question)
+      print "Selected Question:", question
+
+      print "Possible Alternatives:"
+      for template in possible_templates:
+         print self.realize_question(word, template)
+
+   #   self.get_search_result_counts(question, word, selected_template)
+   #   pmi = self.compute_pmi(question)
 
 if __name__ == '__main__':
    qg = QuestionGenerator()
